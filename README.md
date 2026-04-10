@@ -100,6 +100,7 @@ Recommended env:
 - `TELEGRAM_ASSISTANT_TRANSPORT=api`
 - `TELEGRAM_ASSISTANT_ALLOW_LOCAL_FALLBACK=true`
 - `TELEGRAM_ASSISTANT_AUTO_EXECUTE=false`
+- `TELEGRAM_BOT_MODE=polling`
 - `ASSISTANT_SESSION_STORE_MODE=file`
 - `ASSISTANT_SESSION_STORE_PATH=data/assistant-sessions.json`
 
@@ -111,6 +112,74 @@ Behavior:
 - Replies are chunked safely for Telegram's message limits.
 - Poll offsets are persisted in `data/telegram-bot-offset.json` so the bot can restart cleanly.
 - Assistant sessions are persisted so confirmation flows like `yes` / `no` survive process restarts.
+- Telegram forum topics are preserved with `message_thread_id` so replies stay in the correct topic.
+
+### Webhook Mode
+
+If you want Telegram to hit the API directly instead of running the polling worker:
+
+1. Set:
+   - `TELEGRAM_BOT_MODE=webhook`
+   - `TELEGRAM_WEBHOOK_PATH=/api/integrations/telegram/webhook`
+   - `TELEGRAM_WEBHOOK_URL=https://your-domain.com/api/integrations/telegram/webhook`
+   - `TELEGRAM_WEBHOOK_SECRET=<random-secret>`
+2. Start only the API process.
+3. Register the webhook:
+
+```bash
+npm run telegram:webhook:set
+```
+
+To clear it later:
+
+```bash
+npm run telegram:webhook:clear
+```
+
+The webhook route validates `x-telegram-bot-api-secret-token` when `TELEGRAM_WEBHOOK_SECRET` is set and acknowledges updates immediately before processing them in the background.
+
+## Production Deployment
+
+### PM2
+
+The repo now includes [ecosystem.config.cjs](/Users/brass/Downloads/sullilink/isg-second-brain/ecosystem.config.cjs).
+
+Polling mode:
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+Webhook mode:
+
+```bash
+pm2 start ecosystem.config.cjs --only isg-api,isg-scheduler
+pm2 save
+```
+
+### Docker
+
+The repo also includes:
+
+- [Dockerfile](/Users/brass/Downloads/sullilink/isg-second-brain/Dockerfile)
+- [docker-compose.production.yml](/Users/brass/Downloads/sullilink/isg-second-brain/docker-compose.production.yml)
+
+Polling mode:
+
+```bash
+docker compose -f docker-compose.production.yml --profile polling up -d --build
+```
+
+Webhook mode:
+
+```bash
+docker compose -f docker-compose.production.yml up -d --build
+```
+
+The production compose stack includes PostgreSQL, ChromaDB, the API, the scheduler, and an optional polling Telegram worker.
+
+For Google auth in containers, prefer `GOOGLE_CREDENTIALS_JSON` and `GOOGLE_TOKEN_JSON` in the server `.env`. If you want file-based Google auth instead, add your own bind mounts and point `GOOGLE_CREDENTIALS_PATH` / `GOOGLE_TOKEN_PATH` at those mounted paths.
 
 ## Live Integrations
 

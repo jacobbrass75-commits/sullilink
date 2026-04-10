@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log*
+.git
+.gitignore
+.env
+google-credentials.json
+google-token.json
+data
+logs
+raw/property-documents
+wiki/reports

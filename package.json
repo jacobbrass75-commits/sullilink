@@ -17,6 +17,8 @@
     "match": "node scripts/run-matching.js",
     "telegram:bot": "node scripts/run-telegram-bot.js",
     "telegram:probe": "node scripts/telegram-probe.js",
+    "telegram:webhook:set": "node scripts/register-telegram-webhook.js",
+    "telegram:webhook:clear": "node scripts/register-telegram-webhook.js --clear",
     "scheduler:start": "node scripts/start-scheduler.js",
     "wiki:maintain": "node scripts/run-wiki-maintenance.js"
   },

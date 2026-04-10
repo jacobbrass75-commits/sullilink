@@ -4,6 +4,8 @@ const {
   getDefaultTelegramChatId,
   sendTelegramMessage,
   getTelegramFile,
+  setTelegramWebhook,
+  deleteTelegramWebhook,
   __setDependencies,
   __resetDependencies
 } = require('../../src/integrations/telegram');
@@ -91,5 +93,66 @@ test('getTelegramFile requests metadata for the given file id', async () => {
 
   assert.equal(result.file_path, 'voice/file.ogg');
   assert.equal(result.echoed.file_id, 'file-1');
+  restoreEnv(snapshot);
+});
+
+test('setTelegramWebhook sends the configured URL and secret token', async () => {
+  const snapshot = {
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN
+  };
+  const calls = [];
+
+  process.env.TELEGRAM_BOT_TOKEN = 'token-123';
+  __setDependencies({
+    fetch: async (_url, options) => {
+      calls.push(JSON.parse(options.body));
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true,
+          result: true
+        })
+      };
+    }
+  });
+
+  await setTelegramWebhook({
+    url: 'https://example.com/telegram/webhook',
+    secretToken: 'secret-1',
+    dropPendingUpdates: true
+  });
+
+  assert.equal(calls[0].url, 'https://example.com/telegram/webhook');
+  assert.equal(calls[0].secret_token, 'secret-1');
+  assert.equal(calls[0].drop_pending_updates, true);
+  restoreEnv(snapshot);
+});
+
+test('deleteTelegramWebhook requests webhook deletion', async () => {
+  const snapshot = {
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN
+  };
+  const calls = [];
+
+  process.env.TELEGRAM_BOT_TOKEN = 'token-123';
+  __setDependencies({
+    fetch: async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true,
+          result: true
+        })
+      };
+    }
+  });
+
+  await deleteTelegramWebhook({
+    dropPendingUpdates: true
+  });
+
+  assert.match(calls[0].url, /deleteWebhook$/);
+  assert.equal(calls[0].body.drop_pending_updates, true);
   restoreEnv(snapshot);
 });

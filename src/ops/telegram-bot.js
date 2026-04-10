@@ -72,6 +72,10 @@ function getAssistantAutoExecute() {
   return cleanText(process.env.TELEGRAM_ASSISTANT_AUTO_EXECUTE, 'false') === 'true';
 }
 
+function getTelegramBotMode() {
+  return cleanText(process.env.TELEGRAM_BOT_MODE, 'polling');
+}
+
 function getOffsetFilePath() {
   return path.resolve(process.cwd(), process.env.TELEGRAM_BOT_OFFSET_FILE || 'data/telegram-bot-offset.json');
 }
@@ -140,7 +144,12 @@ function splitTelegramMessage(text, maxLength = TELEGRAM_TEXT_LIMIT) {
   return chunks.filter(Boolean);
 }
 
-async function sendChunkedTelegramMessage({ chatId, text, replyToMessageId = null }) {
+async function sendChunkedTelegramMessage({
+  chatId,
+  text,
+  replyToMessageId = null,
+  messageThreadId = null
+}) {
   const chunks = splitTelegramMessage(text);
 
   if (chunks.length === 0) {
@@ -154,7 +163,8 @@ async function sendChunkedTelegramMessage({ chatId, text, replyToMessageId = nul
       await dependencies.sendTelegramMessage({
         chatId,
         text: chunks[index],
-        replyToMessageId: index === 0 ? replyToMessageId : null
+        replyToMessageId: index === 0 ? replyToMessageId : null,
+        messageThreadId
       })
     );
   }
@@ -191,6 +201,7 @@ function formatStatusPayload(payload) {
     `ChromaDB: ${payload.chromadb || 'unknown'}`,
     `Inference: ${payload.inference_provider || 'unknown'}`,
     `Telegram mode: ${getAssistantTransport()}`,
+    `Bot mode: ${getTelegramBotMode()}`,
     `Auto execute: ${getAssistantAutoExecute() ? 'on' : 'off'}`
   ]);
 
@@ -428,7 +439,8 @@ async function processTextMessage(message, context) {
     await sendChunkedTelegramMessage({
       chatId: context.chatId,
       text: commandReply,
-      replyToMessageId: context.messageId
+      replyToMessageId: context.messageId,
+      messageThreadId: context.messageThreadId
     });
 
     return {
@@ -439,13 +451,15 @@ async function processTextMessage(message, context) {
 
   await dependencies.sendTelegramChatAction({
     chatId: context.chatId,
-    action: 'typing'
+    action: 'typing',
+    messageThreadId: context.messageThreadId
   }).catch(() => {});
 
   const result = await runAssistant({
     message: text,
     channel: 'telegram',
     channel_chat_id: context.chatId,
+    channel_thread_id: context.messageThreadId ? String(context.messageThreadId) : undefined,
     user_id: context.userId,
     source: 'telegram',
     auto_execute: getAssistantAutoExecute()
@@ -454,7 +468,8 @@ async function processTextMessage(message, context) {
   await sendChunkedTelegramMessage({
     chatId: context.chatId,
     text: cleanText(result.reply, 'Done.'),
-    replyToMessageId: context.messageId
+    replyToMessageId: context.messageId,
+    messageThreadId: context.messageThreadId
   });
 
   return {
@@ -478,7 +493,8 @@ async function processAudioMessage(message, context) {
   try {
     await dependencies.sendTelegramChatAction({
       chatId: context.chatId,
-      action: 'typing'
+      action: 'typing',
+      messageThreadId: context.messageThreadId
     }).catch(() => {});
 
     const result = await ingestAudio(downloaded.file_path, 'telegram_voice');
@@ -486,7 +502,8 @@ async function processAudioMessage(message, context) {
     await sendChunkedTelegramMessage({
       chatId: context.chatId,
       text: formatAudioIngestResult(result),
-      replyToMessageId: context.messageId
+      replyToMessageId: context.messageId,
+      messageThreadId: context.messageThreadId
     });
 
     return {
@@ -500,10 +517,11 @@ async function processAudioMessage(message, context) {
 }
 
 async function processUpdate(update) {
-  const message = update?.message;
+  const message = update?.message || update?.edited_message;
   const chatId = cleanText(message?.chat?.id != null ? String(message.chat.id) : null, null);
   const userId = cleanText(message?.from?.id != null ? String(message.from.id) : null, null);
   const messageId = Number.isInteger(message?.message_id) ? message.message_id : null;
+  const messageThreadId = Number.isInteger(message?.message_thread_id) ? message.message_thread_id : null;
 
   if (!chatId) {
     return {
@@ -518,7 +536,8 @@ async function processUpdate(update) {
     await sendChunkedTelegramMessage({
       chatId,
       text: 'This chat is not authorized for Soleil yet.',
-      replyToMessageId: messageId
+      replyToMessageId: messageId,
+      messageThreadId
     });
     return {
       processed: false,
@@ -529,7 +548,8 @@ async function processUpdate(update) {
   const context = {
     chatId,
     userId,
-    messageId
+    messageId,
+    messageThreadId
   };
 
   if (getAudioAttachment(message)) {
@@ -543,7 +563,8 @@ async function processUpdate(update) {
   await sendChunkedTelegramMessage({
     chatId,
     text: 'I can handle normal chat messages and voice notes here right now.',
-    replyToMessageId: messageId
+    replyToMessageId: messageId,
+    messageThreadId
   });
 
   return {

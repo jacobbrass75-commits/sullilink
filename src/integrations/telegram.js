@@ -61,7 +61,8 @@ async function sendTelegramMessage({
   text,
   parseMode = null,
   disableWebPreview = true,
-  replyToMessageId = null
+  replyToMessageId = null,
+  messageThreadId = null
 }) {
   const targetChatId = cleanText(chatId, null) || getDefaultTelegramChatId();
   const messageText = cleanText(text, null);
@@ -79,11 +80,12 @@ async function sendTelegramMessage({
     text: messageText,
     ...(parseMode ? { parse_mode: parseMode } : {}),
     disable_web_page_preview: disableWebPreview,
-    ...(replyToMessageId == null ? {} : { reply_to_message_id: replyToMessageId })
+    ...(replyToMessageId == null ? {} : { reply_to_message_id: replyToMessageId }),
+    ...(messageThreadId == null ? {} : { message_thread_id: messageThreadId })
   });
 }
 
-async function sendTelegramChatAction({ chatId, action = 'typing' }) {
+async function sendTelegramChatAction({ chatId, action = 'typing', messageThreadId = null }) {
   const targetChatId = cleanText(chatId, null) || getDefaultTelegramChatId();
 
   if (!targetChatId) {
@@ -92,7 +94,8 @@ async function sendTelegramChatAction({ chatId, action = 'typing' }) {
 
   return telegramRequest('sendChatAction', {
     chat_id: targetChatId,
-    action: cleanText(action, 'typing')
+    action: cleanText(action, 'typing'),
+    ...(messageThreadId == null ? {} : { message_thread_id: messageThreadId })
   });
 }
 
@@ -116,6 +119,30 @@ async function getTelegramFile(fileId) {
   return telegramRequest('getFile', {
     file_id: id
   });
+}
+
+async function setTelegramWebhook({ url, secretToken = null, dropPendingUpdates = false } = {}) {
+  const webhookUrl = cleanText(url, null);
+
+  if (!webhookUrl) {
+    throw new Error('url is required');
+  }
+
+  return telegramRequest('setWebhook', {
+    url: webhookUrl,
+    ...(cleanText(secretToken, null) ? { secret_token: cleanText(secretToken, null) } : {}),
+    drop_pending_updates: Boolean(dropPendingUpdates)
+  });
+}
+
+async function deleteTelegramWebhook({ dropPendingUpdates = false } = {}) {
+  return telegramRequest('deleteWebhook', {
+    drop_pending_updates: Boolean(dropPendingUpdates)
+  });
+}
+
+async function getTelegramWebhookInfo() {
+  return telegramRequest('getWebhookInfo');
 }
 
 async function downloadTelegramFile(filePath, destinationPath) {
@@ -159,6 +186,9 @@ module.exports = {
   listTelegramUpdates,
   getTelegramFile,
   downloadTelegramFile,
+  setTelegramWebhook,
+  deleteTelegramWebhook,
+  getTelegramWebhookInfo,
   __setDependencies,
   __resetDependencies
 };

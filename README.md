@@ -76,6 +76,42 @@ The default job registry is:
 
 For a Mac launchd service, point `ProgramArguments` at `node` and `/absolute/path/to/isg-second-brain/scripts/start-scheduler.js`, set `WorkingDirectory` to the repo root, and enable `RunAtLoad` with `KeepAlive` so the worker restarts after reboots. If you prefer PM2, run `pm2 start scripts/start-scheduler.js --name isg-second-brain-scheduler` from the repo root and then `pm2 save`.
 
+## Telegram Bot
+
+Run the Telegram worker with:
+
+```bash
+npm run telegram:bot
+```
+
+Probe the configured chat with:
+
+```bash
+npm run telegram:probe -- "Soleil is live"
+```
+
+Required env:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_DEFAULT_CHAT_ID` or `TELEGRAM_ALLOWED_CHAT_IDS`
+
+Recommended env:
+
+- `TELEGRAM_ASSISTANT_TRANSPORT=api`
+- `TELEGRAM_ASSISTANT_ALLOW_LOCAL_FALLBACK=true`
+- `TELEGRAM_ASSISTANT_AUTO_EXECUTE=false`
+- `ASSISTANT_SESSION_STORE_MODE=file`
+- `ASSISTANT_SESSION_STORE_PATH=data/assistant-sessions.json`
+
+Behavior:
+
+- Plain text is routed into the assistant, so the broker can chat normally instead of typing commands.
+- Voice notes are downloaded from Telegram and routed through the audio ingestion pipeline.
+- `/help` and `/status` still work for operational checks.
+- Replies are chunked safely for Telegram's message limits.
+- Poll offsets are persisted in `data/telegram-bot-offset.json` so the bot can restart cleanly.
+- Assistant sessions are persisted so confirmation flows like `yes` / `no` survive process restarts.
+
 ## Live Integrations
 
 The app's "local env" means the `.env` file in the repo root plus any local credential files it points to. The new integrations need the following values before live runs:
@@ -96,9 +132,39 @@ Live-run prerequisites to keep in mind:
 - Run `node scripts/migrate.js` after pulling new integration work so the latest tables exist.
 - Scheduler failure alerts are now code-complete, but they still need working Gmail OAuth plus `BROKER_ALERT_EMAIL` or `BROKER_EMAIL` before a live alert can actually be delivered.
 
+## Telegram Agent Mode
+
+The API now exposes a chat-first assistant endpoint that a Telegram bot can call directly:
+
+```bash
+POST /api/assistant/chat
+```
+
+Minimal request body:
+
+```json
+{
+  "message": "What do we know about Mike Chen?",
+  "channel": "telegram",
+  "channel_chat_id": "123456"
+}
+```
+
+How to use it effectively:
+
+- Send every inbound Telegram message to `/api/assistant/chat` instead of parsing slash commands first.
+- Reuse the same `channel_chat_id` for each Telegram chat so the assistant can keep short-lived session context and confirmation state.
+- For low-risk reads like lookup, search, daily overview, and matching, the assistant runs immediately.
+- For side effects like email sends and calendar creation, the assistant can hold a pending action and wait for a natural-language confirmation like `yes` or `no`.
+- If you trust the chat and want to skip confirmation, set `"auto_execute": true` in the request body.
+- The response always includes a user-facing `reply`, plus `tool_name`, `session_id`, and any `pending_action` so the bot can stay dumb and simply relay the answer back to Telegram.
+
+This gives Telegram a normal conversational interface while still routing into the existing brain tools: note ingestion, knowledge search, entity/property lookup, matching, Gmail, calendar, RealEstateTool sync, Monday sync, and daily brief generation.
+
 ## Endpoints
 
 - `GET /health`
+- `POST /api/assistant/chat`
 - `POST /api/import/foreclosure/preview`
 - `POST /api/import/foreclosure`
 - `GET /api/properties/:id`

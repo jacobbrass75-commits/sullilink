@@ -15,6 +15,8 @@
     "brain": "node src/cli/brain.js",
     "google:auth": "node scripts/bootstrap-google-token.js",
     "match": "node scripts/run-matching.js",
+    "telegram:bot": "node scripts/run-telegram-bot.js",
+    "telegram:probe": "node scripts/telegram-probe.js",
     "scheduler:start": "node scripts/start-scheduler.js",
     "wiki:maintain": "node scripts/run-wiki-maintenance.js"
   },

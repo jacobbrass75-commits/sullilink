@@ -1,6 +1,9 @@
 node_modules/
 .env
+google-credentials.json
+google-token.json
 npm-debug.log*
 data/
+logs/
 raw/property-documents/
 wiki/reports/*.json

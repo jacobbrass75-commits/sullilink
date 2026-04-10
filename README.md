@@ -53,6 +53,49 @@ npm start
 npm test
 ```
 
+## Background Scheduler
+
+Start the cron worker locally with:
+
+```bash
+npm run scheduler:start
+```
+
+The scheduler writes JSON-line run records to `logs/cron.log`. Each entry includes the timestamp, job name, status, and duration in milliseconds. Failed jobs attempt to notify the broker via the Gmail alert seam when `BROKER_ALERT_EMAIL` and the Gmail integration are available. If `scripts/health-check.js` is not present yet, that job is skipped automatically.
+
+The default job registry is:
+
+- `*/15 * * * *` → `scripts/health-check.js` when present
+- `*/30 * * * *` → `scripts/process-inbound-email.js`
+- `0 * * * *` → `scripts/sync-properties.js`
+- `0 */4 * * *` → `scripts/sync-monday.js`
+- `0 6 * * *` → `scripts/run-matching.js`
+- `0 6 * * *` → `scripts/sync-calendar.js`
+- `0 7 * * *` → `scripts/send-daily-brief.js`
+- `0 23 * * *` → `scripts/backup-database.js`
+
+For a Mac launchd service, point `ProgramArguments` at `node` and `/absolute/path/to/isg-second-brain/scripts/start-scheduler.js`, set `WorkingDirectory` to the repo root, and enable `RunAtLoad` with `KeepAlive` so the worker restarts after reboots. If you prefer PM2, run `pm2 start scripts/start-scheduler.js --name isg-second-brain-scheduler` from the repo root and then `pm2 save`.
+
+## Live Integrations
+
+The app's "local env" means the `.env` file in the repo root plus any local credential files it points to. The new integrations need the following values before live runs:
+
+- Google OAuth for Gmail, Calendar, and Drive: place `google-credentials.json` and `google-token.json` in the repo root, or point `GOOGLE_CREDENTIALS_PATH` and `GOOGLE_TOKEN_PATH` at those files. Inline fallbacks also work with `GOOGLE_CREDENTIALS_JSON`, `GOOGLE_TOKEN_JSON`, or `GOOGLE_REFRESH_TOKEN`.
+- To mint `google-token.json` locally, run `npm run google:auth` from the repo root after `google-credentials.json` is in place. The script opens a browser for Google consent and saves the refresh token back into the repo root.
+- Gmail live sending: `sendEmail()` stays in draft mode until `GMAIL_AUTO_SEND=true`. Leave it `false` if you want drafts only.
+- Scheduler failure alerts: set `BROKER_ALERT_EMAIL` or `BROKER_EMAIL`, make sure Gmail OAuth is working, and optionally set `GMAIL_FROM_ALIAS`. Alerts are sent through the Gmail integration.
+- Google Calendar and Drive: the shared OAuth files above are enough to start. Optional overrides are `GOOGLE_CALENDAR_ID`, `GOOGLE_CALENDAR_TIME_ZONE`, `CALENDAR_APPOINTMENT_DURATION_MINUTES`, and `GOOGLE_DRIVE_ROOT_FOLDER`.
+- Monday sync: `MONDAY_API_TOKEN` is required. Board IDs already default to the current brokerage board map, so env overrides are only needed if the boards change.
+- Monday template follow-up: `MONDAY_LISTINGS_TEMPLATE_GROUP_ID` is still pending because the Listings template group is not defined yet. Add that env var later when the Monday template group exists.
+- Realestatetool sync: `REALESTATETOOL_URL` is required for live imports and hourly syncs.
+- Whisper transcription: set `TRANSCRIPTION_PROVIDER=whisper` and provide `OPENAI_API_KEY`. Optional overrides are `OPENAI_TRANSCRIPTION_MODEL`, `OPENAI_TRANSCRIPTION_COST_PER_MINUTE`, and `BRAIN_API_URL` if the ingest API is not local.
+
+Live-run prerequisites to keep in mind:
+
+- Start the local services with `docker-compose up -d` before migrations or DB-backed smoke tests.
+- Run `node scripts/migrate.js` after pulling new integration work so the latest tables exist.
+- Scheduler failure alerts are now code-complete, but they still need working Gmail OAuth plus `BROKER_ALERT_EMAIL` or `BROKER_EMAIL` before a live alert can actually be delivered.
+
 ## Endpoints
 
 - `GET /health`

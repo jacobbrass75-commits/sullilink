@@ -11,6 +11,7 @@ const { createApp } = require('../../src/api/server');
 const { parseFile } = require('../../src/import-export/gateway');
 
 const ROOT = path.join(__dirname, '..', '..');
+const SAMPLE_PROPERTIES = require('../fixtures/sample-properties.json');
 const STUB_RESPONSE = {
   status: 'not_implemented',
   module: 'Module 2',
@@ -135,11 +136,19 @@ test('Module 1 integration', async (t) => {
     const secondRun = runNodeScript(path.join(ROOT, 'scripts', 'seed-test-data.js'));
     assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
 
-    const propertyCountResult = await query('SELECT COUNT(*)::int AS count FROM properties');
+    const sampleApns = SAMPLE_PROPERTIES.map((property) => property.apn);
+    const seededPropertyCountResult = await query(
+      `
+        SELECT COUNT(*)::int AS count
+        FROM properties
+        WHERE apn = ANY($1::text[])
+      `,
+      [sampleApns]
+    );
     const entityCountResult = await query('SELECT COUNT(*)::int AS count FROM entities');
     const buyerProfileCountResult = await query('SELECT COUNT(*)::int AS count FROM buyer_profiles');
 
-    assert.equal(propertyCountResult.rows[0].count, 10);
+    assert.equal(seededPropertyCountResult.rows[0].count, sampleApns.length);
     assert.ok(entityCountResult.rows[0].count >= 10);
     assert.equal(buyerProfileCountResult.rows[0].count, 2);
   });

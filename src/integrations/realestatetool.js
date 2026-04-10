@@ -1,8 +1,28 @@
 const crypto = require('crypto');
 const path = require('path');
 const dotenv = require('dotenv');
+const { Client } = require('@modelcontextprotocol/sdk/client');
+const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
+const defaultDependencies = {
+  fetch: global.fetch,
+  createMcpClient: () =>
+    new Client(
+      {
+        name: 'isg-second-brain-realestatetool',
+        version: '0.1.0'
+      },
+      {
+        capabilities: {}
+      }
+    ),
+  createSseTransport: (url) => new SSEClientTransport(new URL(url))
+};
+
+let dependencies = { ...defaultDependencies };
+let mcpConnectionPromise = null;
 
 function getBaseUrl() {
   const url = process.env.REALESTATETOOL_URL;
@@ -100,7 +120,7 @@ function extractResultPayload(body) {
 }
 
 async function postPayload(url, payload) {
-  const response = await fetch(url, {
+  const response = await dependencies.fetch(url, {
     method: 'POST',
     headers: {
       accept: 'application/json, text/plain, */*',
@@ -127,8 +147,79 @@ async function postPayload(url, payload) {
   return body;
 }
 
+function getTransportMode(url) {
+  const configured = String(process.env.REALESTATETOOL_TRANSPORT || '')
+    .trim()
+    .toLowerCase();
+
+  if (configured === 'sse' || configured === 'mcp') {
+    return 'sse';
+  }
+
+  if (configured === 'http' || configured === 'jsonrpc') {
+    return 'http';
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.endsWith('/sse') ? 'sse' : 'http';
+  } catch (_error) {
+    return 'http';
+  }
+}
+
+async function getMcpConnection(url) {
+  if (!mcpConnectionPromise) {
+    mcpConnectionPromise = (async () => {
+      const client = dependencies.createMcpClient();
+      const transport = dependencies.createSseTransport(url);
+
+      try {
+        await client.connect(transport);
+      } catch (error) {
+        await transport.close().catch(() => {});
+        throw error;
+      }
+
+      return { client, transport };
+    })().catch((error) => {
+      mcpConnectionPromise = null;
+      throw error;
+    });
+  }
+
+  return mcpConnectionPromise;
+}
+
+async function closeMcpConnection() {
+  if (!mcpConnectionPromise) {
+    return;
+  }
+
+  const pending = mcpConnectionPromise;
+  mcpConnectionPromise = null;
+
+  const connection = await pending.catch(() => null);
+  await connection?.transport?.close?.().catch(() => {});
+}
+
+async function callRealEstateToolViaSse(url, toolName, params = {}) {
+  const { client } = await getMcpConnection(url);
+  const result = await client.callTool({
+    name: toolName,
+    arguments: params
+  });
+
+  return extractResultPayload(result);
+}
+
 async function callRealEstateTool(toolName, params = {}) {
   const url = getBaseUrl();
+
+  if (getTransportMode(url) === 'sse') {
+    return callRealEstateToolViaSse(url, toolName, params);
+  }
+
   let lastError = null;
 
   for (const payload of buildPayloads(toolName, params)) {
@@ -143,6 +234,24 @@ async function callRealEstateTool(toolName, params = {}) {
   throw new Error(
     `Failed to call realestatetool tool "${toolName}": ${lastError?.message || 'unknown error'}`
   );
+}
+
+function extractCollectionPayload(payload, candidateKeys = ['results', 'items', 'properties']) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  for (const key of candidateKeys) {
+    if (Array.isArray(payload[key])) {
+      return payload[key];
+    }
+  }
+
+  return [];
 }
 
 async function* fetchAllProperties({ limit = 50, region = '' } = {}) {
@@ -203,8 +312,44 @@ async function fetchStats(region = '') {
   return callRealEstateTool('get_property_stats', region ? { region } : {});
 }
 
+async function getLikedProperties(params = {}) {
+  const payload = await callRealEstateTool('get_liked_properties', params);
+  return extractCollectionPayload(payload, ['results', 'items', 'properties', 'liked_properties']);
+}
+
+async function getPassedProperties(params = {}) {
+  const payload = await callRealEstateTool('get_passed_properties', params);
+  return extractCollectionPayload(payload, ['results', 'items', 'properties', 'passed_properties']);
+}
+
+async function getRecordingDocument(apn) {
+  if (typeof apn !== 'string' || apn.trim() === '') {
+    throw new Error('apn must be a non-empty string');
+  }
+
+  return callRealEstateTool('get_recording_document', { apn: apn.trim() });
+}
+
+function __setDependencies(overrides = {}) {
+  dependencies = {
+    ...dependencies,
+    ...overrides
+  };
+}
+
+function __resetDependencies() {
+  dependencies = { ...defaultDependencies };
+  mcpConnectionPromise = null;
+}
+
 module.exports = {
   fetchAllProperties,
   fetchProperty,
-  fetchStats
+  fetchStats,
+  getLikedProperties,
+  getPassedProperties,
+  getRecordingDocument,
+  closeMcpConnection,
+  __setDependencies,
+  __resetDependencies
 };

@@ -106,7 +106,7 @@ def _graph(method: str, path: str, body: dict | None = None) -> dict:
 
 def create_event(subject: str, start_iso: str, end_iso: str, body_html: str,
                  location: str = "", timezone: str = "Pacific Standard Time",
-                 reminder_minutes: int = 1440) -> dict:
+                 reminder_minutes: int = 10080) -> dict:
     """Create an event on Matthew's primary calendar."""
     payload = {
         "subject": subject,

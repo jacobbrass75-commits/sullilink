@@ -105,7 +105,7 @@ def create_sale_event(client: RealNexClient, row: dict, property_key: str | None
         "endDate": end_iso,
         "eventTypeKey": EVENT_TYPE_PHONE_CALL,
         "priorityKey": PRIORITY_HIGH,
-        "alarmMinutes": 1440,
+        "alarmMinutes": 10080,
         "allDay": False,
         "timeless": False,
         "finished": False,

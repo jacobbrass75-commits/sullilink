@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+config.env
+.graph_token_cache.json
+*.ics
+preview_*.txt
+upcoming_sales.json
+~$*.xlsx
